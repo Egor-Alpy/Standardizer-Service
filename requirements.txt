@@ -1,0 +1,32 @@
+# FastAPI
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# База данных
+motor==3.3.2
+redis==4.6.0
+pymongo==4.6.0
+
+# AI - последняя версия anthropic с поддержкой prompt caching
+anthropic>=0.34.0
+
+# HTTP клиент с поддержкой прокси
+httpx[socks]>=0.27.0
+python-socks>=2.4.0
+
+# Утилиты
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+aiohttp==3.9.1
+
+# Логирование
+python-json-logger==2.0.7
+
+# Визуализация метрик
+rich==13.7.0
+
+# Обработка данных
+pandas==2.1.4
+openpyxl==3.1.2

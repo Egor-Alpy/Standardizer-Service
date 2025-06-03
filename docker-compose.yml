@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # Redis для координации
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # API сервис
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # Прокси настройки (если указаны в .env)
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - SOCKS_PROXY=${SOCKS_PROXY}
+      - NO_PROXY=localhost,127.0.0.1,redis
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src/data:/app/src/data:ro  # Монтируем файл стандартов
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+
+  # Воркер стандартизации
+  standardization-worker:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - WORKER_ID=std_worker_1
+      - REDIS_URL=redis://redis:6379
+      - STANDARDIZATION_BATCH_SIZE=2
+      - RATE_LIMIT_DELAY=10
+      - MAX_RETRIES=3
+      - ENABLE_PROMPT_CACHING=true
+      - CACHE_TTL_TYPE=5m
+      # Прокси настройки (если указаны в .env)
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - SOCKS_PROXY=${SOCKS_PROXY}
+      - NO_PROXY=localhost,127.0.0.1,redis
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src/data:/app/src/data:ro  # Монтируем файл стандартов
+    # Используем host network mode для доступа к локальным MongoDB
+    network_mode: "host"
+    command: python -m src.workers.standardization_worker --worker-id std_worker_1
+
+  # Второй воркер (опционально)
+  standardization-worker-2:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - WORKER_ID=std_worker_2
+      - REDIS_URL=redis://redis:6379
+      - STANDARDIZATION_BATCH_SIZE=50
+      - RATE_LIMIT_DELAY=10
+      - MAX_RETRIES=3
+      - ENABLE_PROMPT_CACHING=true
+      - CACHE_TTL_TYPE=5m
+      # Прокси настройки
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - SOCKS_PROXY=${SOCKS_PROXY}
+      - NO_PROXY=localhost,127.0.0.1,redis
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src/data:/app/src/data:ro
+    network_mode: "host"
+    command: python -m src.workers.standardization_worker --worker-id std_worker_2
+    profiles:
+      - scale  # Запускается только при docker-compose --profile scale up
+
+volumes:
+  redis_data:
