@@ -28,8 +28,6 @@
     "product_id": "ID товара из входных данных",
     "standardized_attributes": [
       {
-        "original_name": "название атрибута из товара",
-        "original_value": "значение атрибута из товара",
         "standard_name": "точное название из ключа стандарта",
         "standard_value": "стандартизированное значение",
         "characteristic_type": "ключ характеристики"

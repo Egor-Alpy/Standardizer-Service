@@ -20,8 +20,6 @@ class ProductAttribute(BaseModel):
 
 class StandardizedAttribute(BaseModel):
     """Стандартизированный атрибут"""
-    original_name: str = Field(..., description="Исходное название атрибута")
-    original_value: str = Field(..., description="Исходное значение")
     standard_name: str = Field(..., description="Стандартизированное название")
     standard_value: str = Field(..., description="Стандартизированное значение")
     characteristic_type: str = Field(..., description="Тип характеристики из стандарта")

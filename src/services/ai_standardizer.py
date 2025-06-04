@@ -145,8 +145,6 @@ class AIStandardizer:
     "product_id": "ID товара",
     "standardized_attributes": [
       {{
-        "original_name": "Исходное название атрибута",
-        "original_value": "Исходное значение", 
         "standard_name": "Название из ключа стандарта",
         "standard_value": "Стандартизированное значение из values или с units",
         "characteristic_type": "Ключ характеристики из стандарта"
@@ -361,11 +359,9 @@ class AIStandardizer:
                 for attr in product_data.get("standardized_attributes", []):
                     try:
                         standardized_attr = StandardizedAttribute(
-                            original_name=attr["original_name"],
-                            original_value=attr["original_value"],
-                            standard_name=attr["standard_name"],
-                            standard_value=attr["standard_value"],
-                            characteristic_type=attr["characteristic_type"]
+                            standard_name=attr.get("standard_name", ""),
+                            standard_value=attr.get("standard_value", ""),
+                            characteristic_type=attr.get("characteristic_type", "")
                         )
                         standardized_attrs.append(standardized_attr)
                     except Exception as e:

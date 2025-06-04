@@ -39,8 +39,8 @@ services:
     environment:
       - WORKER_ID=std_worker_1
       - REDIS_URL=redis://redis:6379
-      - STANDARDIZATION_BATCH_SIZE=50
-      - RATE_LIMIT_DELAY=25
+      - STANDARDIZATION_BATCH_SIZE=5
+      - RATE_LIMIT_DELAY=5
       - MAX_RETRIES=5
       - ENABLE_PROMPT_CACHING=true
       - CACHE_TTL_TYPE=5m
