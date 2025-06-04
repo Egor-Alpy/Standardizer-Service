@@ -73,7 +73,7 @@ class StandardizationService:
                 # Получаем полную информацию о товаре из исходной БД
                 full_product = await self.product_fetcher.fetch_product_details(
                     classified_product["old_mongo_id"],
-                    classified_product["collection_name"]  # Передаем имя коллекции
+                    classified_product["collection_name"]
                 )
 
                 if not full_product:
@@ -90,7 +90,7 @@ class StandardizationService:
                 ]
 
                 product_for_ai = ProductForStandardization(
-                    id=str(classified_product["_id"]),  # Передаем как id
+                    id=str(classified_product["_id"]),
                     old_mongo_id=classified_product["old_mongo_id"],
                     collection_name=classified_product["collection_name"],
                     title=full_product.get("title", ""),
@@ -243,14 +243,11 @@ class StandardizationService:
         import asyncio
         import os
 
-        # Проверяем настройку группировки
-        enable_grouping = os.getenv("ENABLE_OKPD_GROUPING", "false").lower() == "true"
+        # ВРЕМЕННО отключаем группировку для отладки
+        enable_grouping = False
 
-        if enable_grouping:
-            logger.info("OKPD grouping enabled - processing products by OKPD2 groups for optimal caching")
-            await self._run_with_okpd_grouping()
-        else:
-            await self._run_without_grouping()
+        logger.info("Running without OKPD grouping for debugging")
+        await self._run_without_grouping()
 
     async def _run_with_okpd_grouping(self):
         """Запустить с группировкой по ОКПД2 для оптимального кэширования"""
@@ -258,57 +255,81 @@ class StandardizationService:
 
         while True:
             try:
-                # Получаем статистику по группам
-                stats = await self.classified_store.get_statistics()
-                okpd_classes = stats.get("by_okpd_class", {})
-
-                if not okpd_classes:
-                    logger.info("No products to process, waiting...")
-                    await asyncio.sleep(30)
-                    continue
-
-                # Обрабатываем по группам ОКПД2
-                processed_any = False
-
-                for okpd_prefix in sorted(okpd_classes.keys()):
-                    # Проверяем есть ли товары для обработки в этой группе
-                    count = await self.classified_store.collection.count_documents({
+                # Получаем список всех уникальных ОКПД кодов
+                pipeline = [
+                    {"$match": {
                         "status_stg2": "classified",
-                        "okpd2_code": {"$regex": f"^{okpd_prefix}"},
                         "$or": [
                             {"standardization_status": {"$exists": False}},
                             {"standardization_status": "pending"}
                         ]
-                    })
+                    }},
+                    {"$group": {
+                        "_id": "$okpd2_code",
+                        "count": {"$sum": 1}
+                    }}
+                ]
 
-                    if count > 0:
-                        logger.info(f"Processing OKPD2 group {okpd_prefix} ({count} products pending)")
+                cursor = self.classified_store.collection.aggregate(pipeline)
+                okpd_codes = await cursor.to_list(length=None)
 
-                        # Обрабатываем все товары этой группы
-                        while count > 0:
-                            result = await self.process_batch(okpd_prefix=okpd_prefix)
+                if not okpd_codes:
+                    logger.info("No products to process, waiting...")
+                    await asyncio.sleep(30)
+                    continue
 
-                            if result["total"] == 0:
-                                break
+                logger.info(f"Found {len(okpd_codes)} unique OKPD codes with pending products")
 
-                            processed_any = True
+                # Группируем коды по первым 4 цифрам для сопоставления со словарем
+                groups_to_process = {}
+                for item in okpd_codes:
+                    code = item["_id"]
+                    if code and len(code) >= 4:
+                        # Преобразуем в формат XX.XX
+                        group_key = f"{code[:2]}.{code[2:4]}"
 
-                            # Обновляем счетчик
-                            count = await self.classified_store.collection.count_documents({
-                                "status_stg2": "classified",
-                                "okpd2_code": {"$regex": f"^{okpd_prefix}"},
-                                "$or": [
-                                    {"standardization_status": {"$exists": False}},
-                                    {"standardization_status": "pending"}
-                                ]
-                            })
+                        # Проверяем, есть ли эта группа в словаре стандартов
+                        if group_key in self.ai_standardizer.okpd2_standards:
+                            if group_key not in groups_to_process:
+                                groups_to_process[group_key] = []
+                            groups_to_process[group_key].append((code, item["count"]))
+                        else:
+                            logger.warning(f"No standards found for OKPD group {group_key} (code: {code})")
 
-                            # Задержка между батчами
-                            delay = int(os.getenv("RATE_LIMIT_DELAY", "5"))
-                            await asyncio.sleep(delay)
+                if not groups_to_process:
+                    logger.warning("No OKPD groups found in standards dictionary")
+                    await asyncio.sleep(30)
+                    continue
+
+                logger.info(f"Will process {len(groups_to_process)} OKPD groups")
+
+                # Обрабатываем каждую группу
+                processed_any = False
+                for group_key, codes_info in sorted(groups_to_process.items()):
+                    total_in_group = sum(count for _, count in codes_info)
+                    logger.info(
+                        f"Processing OKPD2 group {group_key} ({total_in_group} products, {len(codes_info)} codes)")
+
+                    # Обрабатываем все коды этой группы
+                    for code, count in codes_info:
+                        if count > 0:
+                            logger.info(f"  Processing code {code} ({count} products)")
+
+                            # Обрабатываем батчами
+                            while True:
+                                result = await self.process_batch(okpd_prefix=code)
+
+                                if result["total"] == 0:
+                                    break
+
+                                processed_any = True
+
+                                # Задержка между батчами
+                                delay = int(os.getenv("RATE_LIMIT_DELAY", "5"))
+                                await asyncio.sleep(delay)
 
                 if not processed_any:
-                    logger.info("No more products to process, waiting...")
+                    logger.info("No products were processed, waiting...")
                     await asyncio.sleep(30)
 
             except Exception as e:
@@ -316,18 +337,41 @@ class StandardizationService:
                 await asyncio.sleep(60)
 
     async def _run_without_grouping(self):
-        """Запустить без группировки (старый метод)"""
+        """Запустить без группировки (для отладки)"""
         import asyncio
         import os
 
         while True:
             try:
+                # Проверяем количество товаров для обработки
+                count = await self.classified_store.collection.count_documents({
+                    "status_stg2": "classified",
+                    "$or": [
+                        {"standardization_status": {"$exists": False}},
+                        {"standardization_status": "pending"}
+                    ]
+                })
+
+                logger.info(f"Total products pending standardization: {count}")
+
+                if count == 0:
+                    logger.info("No products to process, waiting...")
+                    await asyncio.sleep(30)
+                    continue
+
                 # Обрабатываем батч
                 result = await self.process_batch()
 
                 if result["total"] == 0:
-                    # Нет товаров для обработки
-                    logger.info("No products to process, waiting...")
+                    # Возможно товары застряли в processing
+                    processing_count = await self.classified_store.collection.count_documents({
+                        "standardization_status": "processing"
+                    })
+                    logger.warning(f"No products fetched but {processing_count} are in processing status")
+
+                    if processing_count > 0:
+                        logger.info("Consider running cleanup-stuck command to reset stuck products")
+
                     await asyncio.sleep(30)
                 else:
                     # Задержка между батчами

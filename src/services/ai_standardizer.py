@@ -41,7 +41,8 @@ class AIStandardizer:
             with open(settings.okpd2_characteristics_path, 'r', encoding='utf-8') as f:
                 standards = json.load(f)
                 logger.info(f"Loaded OKPD2 standards from {settings.okpd2_characteristics_path}")
-                return standards.get("okpd2_characteristics", {})
+                # Изменено: теперь ключ okpd2_groups вместо okpd2_characteristics
+                return standards.get("okpd2_groups", {})
         except Exception as e:
             logger.error(f"Failed to load standards: {e}")
             return {}
@@ -81,8 +82,29 @@ class AIStandardizer:
                 )
 
     def _get_okpd_group(self, okpd2_code: str) -> str:
-        """Получить группу ОКПД2 (первые 2 цифры)"""
-        return okpd2_code[:2] if len(okpd2_code) >= 2 else ""
+        """Получить группу ОКПД2 (первые 4 цифры с точкой)"""
+        if not okpd2_code:
+            return ""
+
+        # Убираем точки если они есть в коде
+        clean_code = okpd2_code.replace(".", "")
+
+        # Преобразуем код в формат XX.XX
+        if len(clean_code) >= 4:
+            return f"{clean_code[:2]}.{clean_code[2:4]}"
+        elif len(clean_code) == 2:
+            # Для двузначных кодов ищем первую подходящую группу
+            prefix = clean_code[:2]
+            for key in sorted(self.okpd2_standards.keys()):
+                if key.startswith(f"{prefix}."):
+                    logger.info(f"Using group {key} for short code {okpd2_code}")
+                    return key
+            # Если не нашли, возвращаем пустую строку
+            logger.warning(f"No matching group found for code {okpd2_code}")
+            return ""
+        else:
+            logger.warning(f"Invalid OKPD2 code format: {okpd2_code}")
+            return ""
 
     def _prepare_cached_content(self, okpd_group: str) -> Optional[str]:
         """Подготовить кэшируемый контент для группы ОКПД2"""
@@ -93,24 +115,29 @@ class AIStandardizer:
         standards = self.okpd2_standards[okpd_group]
         standards_json = json.dumps(standards, ensure_ascii=False, indent=2)
 
-        # Базовый промпт с инструкциями и стандартами
+        # Обновленный промпт для нового формата
         cached_content = f"""ЗАДАЧА: Стандартизировать характеристики товаров согласно предоставленным стандартам ОКПД2.
 
 ИНСТРУКЦИИ:
-1. Для каждого товара приведи ВСЕ атрибуты к стандартным названиям и значениям
+1. Для каждого товара приведи атрибуты к стандартным названиям и значениям
 2. Используй ТОЛЬКО характеристики из предоставленного стандарта для данной группы ОКПД2
-3. Сопоставь исходные атрибуты с наиболее подходящими стандартными
-4. Если атрибут не соответствует ни одной стандартной характеристике - НЕ включай его
+3. Сопоставь исходные атрибуты с наиболее подходящими стандартными по смыслу
+4. Если атрибут не соответствует ни одной стандартной характеристике - НЕ включай его в результат
 5. Стандартизируй значения согласно допустимым вариантам из стандарта
 6. Возвращай результат СТРОГО в формате JSON без дополнительного текста
 
 ПРАВИЛА СТАНДАРТИЗАЦИИ:
-- Название характеристики должно ТОЧНО соответствовать стандарту (поле "name")
-- Значение должно быть из списка допустимых значений ("values") или в правильных единицах измерения ("units")
-- Учитывай variations (варианты написания) при сопоставлении
+- Название характеристики должно ТОЧНО соответствовать ключу из стандарта
+- Значение должно быть из списка "values" или с правильными единицами измерения из "units"
+- При сопоставлении учитывай смысл атрибута, а не только точное совпадение названия
 - Приводи единицы измерения к стандартным из списка "units"
-- Если значение не подходит под стандарт - выбери ближайшее подходящее
-- characteristic_type - это ключ характеристики из стандарта (например, "weight", "color" и т.д.)
+- Если значение не подходит под стандарт - выбери ближайшее подходящее или пропусти атрибут
+- characteristic_type - это ключ характеристики из стандарта (например, "Вес", "Цвет" и т.д.)
+
+ПРИМЕРЫ СОПОСТАВЛЕНИЯ:
+- "количество слоев" → "Вид зерна" (если речь о зерне)
+- "цвет изделия" → "Цвет" (если есть в стандарте)
+- "масса нетто" → "Вес" (если есть в стандарте)
 
 ФОРМАТ ВЫВОДА (массив JSON):
 [
@@ -118,11 +145,11 @@ class AIStandardizer:
     "product_id": "ID товара",
     "standardized_attributes": [
       {{
-        "original_name": "Исходное название",
+        "original_name": "Исходное название атрибута",
         "original_value": "Исходное значение", 
-        "standard_name": "Стандартное название из поля name",
-        "standard_value": "Стандартное значение",
-        "characteristic_type": "Тип из ключа характеристики"
+        "standard_name": "Название из ключа стандарта",
+        "standard_value": "Стандартизированное значение из values или с units",
+        "characteristic_type": "Ключ характеристики из стандарта"
       }}
     ]
   }}
@@ -228,19 +255,39 @@ class AIStandardizer:
         if not products:
             return {}
 
-        # Группируем товары по группам ОКПД2
+        # Логируем коды для отладки
+        logger.info(f"Standardizing batch of {len(products)} products")
+        for p in products[:3]:  # Первые 3 для примера
+            logger.info(f"  Product {p.product_id}: OKPD2 code = '{p.okpd2_code}'")
+
+        # Группируем товары по группам ОКПД2 (первые 4 цифры)
         products_by_group = {}
         for product in products:
+            logger.debug(f"Product {product.product_id} has OKPD2 code: '{product.okpd2_code}'")
             group = self._get_okpd_group(product.okpd2_code)
-            if group not in products_by_group:
-                products_by_group[group] = []
-            products_by_group[group].append(product)
+
+            if not group:
+                # Если группа не найдена, добавляем в специальную группу
+                if "UNMAPPED" not in products_by_group:
+                    products_by_group["UNMAPPED"] = []
+                products_by_group["UNMAPPED"].append(product)
+            else:
+                if group not in products_by_group:
+                    products_by_group[group] = []
+                products_by_group[group].append(product)
 
         all_results = {}
 
         # Обрабатываем каждую группу отдельно
         for okpd_group, group_products in products_by_group.items():
-            logger.info(f"Processing {len(group_products)} products for OKPD group {okpd_group}")
+            if okpd_group == "UNMAPPED":
+                logger.warning(f"Skipping {len(group_products)} products with unmapped OKPD codes")
+                # Помечаем как failed
+                for product in group_products:
+                    all_results[product.product_id] = []
+                continue
+
+            logger.info(f"Processing {len(group_products)} products for OKPD group '{okpd_group}'")
 
             # Получаем или создаем кэшированный контент
             if okpd_group not in self.group_caches:
@@ -257,7 +304,7 @@ class AIStandardizer:
             products_data = []
             for product in group_products:
                 product_info = {
-                    "product_id": product.product_id,  # Используем property
+                    "product_id": product.product_id,
                     "title": product.title,
                     "okpd2_code": product.okpd2_code,
                     "attributes": [

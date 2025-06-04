@@ -53,7 +53,8 @@ class ClassifiedMongoStore:
                 {
                     "$set": {
                         "standardization_status": "processing",
-                        "standardization_started_at": datetime.utcnow()
+                        "standardization_started_at": datetime.utcnow(),
+                        "standardization_worker_id": settings.worker_id if hasattr(settings, 'worker_id') else None
                     }
                 },
                 return_document=True
@@ -137,6 +138,46 @@ class ClassifiedMongoStore:
             "by_status": {s["_id"]: s["count"] for s in facets["by_status"] if s["_id"]},
             "by_okpd_class": {c["_id"]: c["count"] for c in facets["by_okpd_class"] if c["_id"]}
         }
+
+        return stats
+
+    async def get_okpd_groups_statistics(self) -> Dict[str, Dict[str, int]]:
+        """Получить статистику по группам ОКПД2 (первые 4 цифры)"""
+        pipeline = [
+            {"$match": {
+                "status_stg2": "classified",
+                "$or": [
+                    {"standardization_status": {"$exists": False}},
+                    {"standardization_status": "pending"}
+                ]
+            }},
+            {"$group": {
+                "_id": {
+                    "$concat": [
+                        {"$substr": ["$okpd2_code", 0, 2]},
+                        ".",
+                        {"$substr": ["$okpd2_code", 2, 2]}
+                    ]
+                },
+                "count": {"$sum": 1}
+            }},
+            {"$match": {
+                "_id": {"$ne": "."}  # Исключаем пустые результаты
+            }}
+        ]
+
+        cursor = self.collection.aggregate(pipeline)
+        result = await cursor.to_list(length=None)
+
+        stats = {
+            "by_okpd_group": {item["_id"]: item["count"] for item in result if item["_id"]}
+        }
+
+        # Логируем найденные группы
+        if stats["by_okpd_group"]:
+            logger.info(f"Found {len(stats['by_okpd_group'])} OKPD groups with pending products")
+            for group, count in sorted(stats["by_okpd_group"].items()):
+                logger.debug(f"  Group {group}: {count} products")
 
         return stats
 

@@ -4,6 +4,8 @@ from urllib.parse import quote_plus
 
 
 class Settings(BaseSettings):
+    populate_by_name: bool = True
+
     # Source MongoDB (исходная БД с товарами)
     source_mongo_host: str = "localhost"
     source_mongo_port: int = 27017

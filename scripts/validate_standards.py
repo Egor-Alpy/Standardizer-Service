@@ -23,97 +23,84 @@ def validate_standards(file_path: str = "src/data/okpd2_characteristics.json") -
 
         console.print("[green]✓ File loaded successfully[/green]")
 
-        # Проверяем структуру
-        if "okpd2_characteristics" not in data:
-            console.print("[red]✗ Missing 'okpd2_characteristics' root key[/red]")
+        # Проверяем структуру - изменено на okpd2_groups
+        if "okpd2_groups" not in data:
+            console.print("[red]✗ Missing 'okpd2_groups' root key[/red]")
             return False
 
-        okpd2_chars = data["okpd2_characteristics"]
+        okpd2_groups = data["okpd2_groups"]
 
-        if not isinstance(okpd2_chars, dict):
-            console.print("[red]✗ 'okpd2_characteristics' must be a dictionary[/red]")
+        if not isinstance(okpd2_groups, dict):
+            console.print("[red]✗ 'okpd2_groups' must be a dictionary[/red]")
             return False
 
         console.print("[green]✓ Basic structure is valid[/green]")
 
         # Статистика
         stats = {
-            "total_groups": len(okpd2_chars),
+            "total_groups": len(okpd2_groups),
             "total_characteristics": 0,
-            "total_variations": 0,
             "total_values": 0,
+            "total_units": 0,
             "groups_with_errors": []
         }
 
         # Таблица групп
         groups_table = Table(title="ОКПД2 Groups", box=box.ROUNDED)
         groups_table.add_column("Code", style="cyan")
-        groups_table.add_column("Name", style="green")
         groups_table.add_column("Characteristics", style="yellow", justify="right")
+        groups_table.add_column("Total Values", style="green", justify="right")
         groups_table.add_column("Status", style="magenta")
 
         # Проверяем каждую группу
-        for group_code, group_data in okpd2_chars.items():
+        for group_code, characteristics in okpd2_groups.items():
             errors = []
+            group_values_count = 0
 
-            # Проверяем формат кода группы
-            if not group_code.isdigit() or len(group_code) != 2:
-                errors.append(f"Invalid group code format: {group_code}")
+            # Проверяем формат кода группы (XX.XX)
+            if not (len(group_code) == 5 and group_code[2] == '.' and
+                    group_code[:2].isdigit() and group_code[3:5].isdigit()):
+                errors.append(f"Invalid group code format: {group_code} (expected XX.XX)")
 
-            # Проверяем наличие обязательных полей
-            if not isinstance(group_data, dict):
-                errors.append("Group data must be a dictionary")
+            # Проверяем что это словарь характеристик
+            if not isinstance(characteristics, dict):
+                errors.append("Group data must be a dictionary of characteristics")
                 stats["groups_with_errors"].append(group_code)
                 continue
 
-            if "name" not in group_data:
-                errors.append("Missing 'name' field")
+            stats["total_characteristics"] += len(characteristics)
 
-            if "characteristics" not in group_data:
-                errors.append("Missing 'characteristics' field")
-            else:
-                chars = group_data["characteristics"]
-                if not isinstance(chars, dict):
-                    errors.append("'characteristics' must be a dictionary")
+            # Проверяем каждую характеристику
+            for char_name, char_data in characteristics.items():
+                if not isinstance(char_data, dict):
+                    errors.append(f"Characteristic '{char_name}' must be a dictionary")
+                    continue
+
+                # Проверяем наличие обязательных полей
+                if "values" not in char_data:
+                    errors.append(f"Characteristic '{char_name}' missing 'values' field")
                 else:
-                    stats["total_characteristics"] += len(chars)
+                    if isinstance(char_data["values"], list):
+                        stats["total_values"] += len(char_data["values"])
+                        group_values_count += len(char_data["values"])
+                    else:
+                        errors.append(f"Characteristic '{char_name}' values must be a list")
 
-                    # Проверяем каждую характеристику
-                    for char_key, char_data in chars.items():
-                        if not isinstance(char_data, dict):
-                            errors.append(f"Characteristic '{char_key}' must be a dictionary")
-                            continue
-
-                        # Обязательные поля характеристики
-                        if "name" not in char_data:
-                            errors.append(f"Characteristic '{char_key}' missing 'name' field")
-
-                        if "variations" not in char_data:
-                            errors.append(f"Characteristic '{char_key}' missing 'variations' field")
-                        else:
-                            if isinstance(char_data["variations"], list):
-                                stats["total_variations"] += len(char_data["variations"])
-                            else:
-                                errors.append(f"Characteristic '{char_key}' variations must be a list")
-
-                        # Опциональные поля
-                        if "values" in char_data:
-                            if isinstance(char_data["values"], list):
-                                stats["total_values"] += len(char_data["values"])
-                            else:
-                                errors.append(f"Characteristic '{char_key}' values must be a list")
-
-                        if "units" in char_data and not isinstance(char_data["units"], list):
-                            errors.append(f"Characteristic '{char_key}' units must be a list")
+                if "units" not in char_data:
+                    errors.append(f"Characteristic '{char_name}' missing 'units' field")
+                else:
+                    if isinstance(char_data["units"], list):
+                        stats["total_units"] += len(char_data["units"])
+                    else:
+                        errors.append(f"Characteristic '{char_name}' units must be a list")
 
             # Добавляем в таблицу
             status = "[green]✓ OK[/green]" if not errors else f"[red]✗ {len(errors)} errors[/red]"
-            char_count = len(group_data.get("characteristics", {}))
 
             groups_table.add_row(
                 group_code,
-                group_data.get("name", "[Missing]"),
-                str(char_count),
+                str(len(characteristics)),
+                str(group_values_count),
                 status
             )
 
@@ -127,27 +114,24 @@ def validate_standards(file_path: str = "src/data/okpd2_characteristics.json") -
         console.print("\n")
         console.print(groups_table)
 
-        # Проверяем дубликаты вариаций между характеристиками
-        console.print("\n[bold cyan]Checking for duplicate variations across characteristics...[/bold cyan]\n")
+        # Проверяем на пустые значения
+        console.print("\n[bold cyan]Checking for empty values and units...[/bold cyan]\n")
 
-        all_variations = defaultdict(list)
-        for group_code, group_data in okpd2_chars.items():
-            if isinstance(group_data, dict) and "characteristics" in group_data:
-                for char_key, char_data in group_data["characteristics"].items():
-                    if isinstance(char_data, dict) and "variations" in char_data:
-                        for variation in char_data.get("variations", []):
-                            all_variations[variation.lower()].append(f"{group_code}.{char_key}")
+        empty_values_count = 0
+        empty_units_count = 0
 
-        duplicates = {k: v for k, v in all_variations.items() if len(v) > 1}
+        for group_code, characteristics in okpd2_groups.items():
+            for char_name, char_data in characteristics.items():
+                if isinstance(char_data, dict):
+                    if char_data.get("values") == []:
+                        empty_values_count += 1
+                        console.print(f"[yellow]Empty values in {group_code}.{char_name}[/yellow]")
+                    if char_data.get("units") == []:
+                        empty_units_count += 1
+                        # Это нормально для многих характеристик
 
-        if duplicates:
-            console.print(f"[yellow]Found {len(duplicates)} duplicate variations:[/yellow]")
-            for variation, locations in list(duplicates.items())[:10]:
-                console.print(f"  • '{variation}' found in: {', '.join(locations)}")
-            if len(duplicates) > 10:
-                console.print(f"  [dim]... and {len(duplicates) - 10} more duplicates[/dim]")
-        else:
-            console.print("[green]✓ No duplicate variations found[/green]")
+        if empty_values_count > 0:
+            console.print(f"\n[yellow]Found {empty_values_count} characteristics with empty values[/yellow]")
 
         # Итоговая статистика
         console.print("\n[bold cyan]Summary:[/bold cyan]\n")
@@ -158,9 +142,12 @@ def validate_standards(file_path: str = "src/data/okpd2_characteristics.json") -
 
         summary_table.add_row("Total OKPD2 groups", str(stats["total_groups"]))
         summary_table.add_row("Total characteristics", str(stats["total_characteristics"]))
-        summary_table.add_row("Total variations", str(stats["total_variations"]))
-        summary_table.add_row("Total predefined values", str(stats["total_values"]))
+        summary_table.add_row("Total values", str(stats["total_values"]))
+        summary_table.add_row("Total units", str(stats["total_units"]))
         summary_table.add_row("Groups with errors", str(len(stats["groups_with_errors"])))
+        summary_table.add_row("Average characteristics per group",
+                              f"{stats['total_characteristics'] / stats['total_groups']:.1f}" if stats[
+                                                                                                     'total_groups'] > 0 else "0")
 
         console.print(summary_table)
 
@@ -169,11 +156,8 @@ def validate_standards(file_path: str = "src/data/okpd2_characteristics.json") -
             console.print("\n[yellow]⚠ Recommendations:[/yellow]")
             console.print("  • Fix errors in groups: " + ", ".join(stats["groups_with_errors"]))
 
-        if stats["total_characteristics"] < stats["total_groups"] * 3:
-            console.print("  • Consider adding more characteristics to groups")
-
-        if duplicates:
-            console.print("  • Review duplicate variations to ensure they are intentional")
+        if empty_values_count > 0:
+            console.print("  • Review characteristics with empty values")
 
         # Финальный статус
         is_valid = len(stats["groups_with_errors"]) == 0
@@ -212,6 +196,4 @@ def main():
 
 
 if __name__ == "__main__":
-    from collections import defaultdict
-
     main()
