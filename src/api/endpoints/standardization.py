@@ -62,7 +62,6 @@ async def get_standardization_statistics(
         "failed": failed,
         "standardization_percentage": standardization_percentage,
         "by_okpd_class": classified_stats.get("by_okpd_class", {}),
-        "top_brands": standardized_stats.get("top_brands", []),
         "top_attributes": standardized_stats.get("top_attributes", [])
     }
 
@@ -70,7 +69,6 @@ async def get_standardization_statistics(
 @router.get("/products/standardized")
 async def get_standardized_products(
         okpd_code: Optional[str] = Query(None, description="Filter by OKPD2 code"),
-        brand: Optional[str] = Query(None, description="Filter by brand"),
         attribute_name: Optional[str] = Query(None, description="Filter by attribute name"),
         attribute_value: Optional[str] = Query(None, description="Filter by attribute value"),
         limit: int = Query(100, ge=1, le=1000),
@@ -91,8 +89,6 @@ async def get_standardized_products(
         filters = {}
         if okpd_code:
             filters["okpd2_code"] = {"$regex": f"^{okpd_code}"}
-        if brand:
-            filters["brand"] = brand
 
         products = await standardized_store.find_products(
             filters=filters,
@@ -239,14 +235,11 @@ async def export_sample_data(
     export_data = []
     for product in products:
         export_item = {
-            "title": product.get("title"),
-            "brand": product.get("brand"),
+            "old_mongo_id": product.get("old_mongo_id"),
+            "classified_mongo_id": product.get("classified_mongo_id"),
+            "collection_name": product.get("collection_name"),
             "okpd2_code": product.get("okpd2_code"),
             "okpd2_name": product.get("okpd2_name"),
-            "original_attributes": [
-                f"{attr['attr_name']}: {attr['attr_value']}"
-                for attr in product.get("original_attributes", [])
-            ],
             "standardized_attributes": [
                 f"{attr['standard_name']}: {attr['standard_value']}"
                 for attr in product.get("standardized_attributes", [])

@@ -48,40 +48,23 @@ class ProductForStandardization(BaseModel):
 
 class StandardizedProduct(BaseModel):
     """Стандартизированный товар"""
-    # Идентификаторы
+    # Идентификаторы для связи с исходными БД
     old_mongo_id: str = Field(..., description="ID из исходной БД")
     classified_mongo_id: str = Field(..., description="ID из БД классификации")
     collection_name: str = Field(..., description="Исходная коллекция")
 
-    # Основные данные товара
-    title: str
-    description: Optional[str] = None
-    article: Optional[str] = None
-    brand: Optional[str] = None
-    country_of_origin: Optional[str] = None
-    warranty_months: Optional[str] = None
-    category: Optional[str] = None
-    created_at: Optional[str] = None
-
-    # Классификация
+    # Классификация ОКПД2
     okpd2_code: str
     okpd2_name: str
-    okpd_group: List[str]
 
-    # Атрибуты
-    original_attributes: List[ProductAttribute] = Field(..., description="Исходные атрибуты")
+    # Результаты стандартизации
     standardized_attributes: List[StandardizedAttribute] = Field(..., description="Стандартизированные атрибуты")
 
-    # Поставщики
-    suppliers: List[Dict[str, Any]] = Field(default_factory=list, description="Информация о поставщиках")
-
     # Метаданные стандартизации
-    standardization_status: StandardizationStatus = Field(StandardizationStatus.PENDING)
-    standardization_started_at: Optional[datetime] = None
-    standardization_completed_at: Optional[datetime] = None
+    standardization_status: StandardizationStatus = Field(StandardizationStatus.STANDARDIZED)
+    standardization_completed_at: datetime = Field(default_factory=datetime.utcnow)
     standardization_batch_id: Optional[str] = None
     standardization_worker_id: Optional[str] = None
-    standardization_error: Optional[str] = None
 
     class Config:
         use_enum_values = True

@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -133,38 +134,17 @@ class StandardizationService:
 
                     # Создаем стандартизированный товар
                     standardized_product = StandardizedProduct(
-                        # Идентификаторы
+                        # Идентификаторы для связи
                         old_mongo_id=classified["old_mongo_id"],
                         classified_mongo_id=str(classified["_id"]),
                         collection_name=classified["collection_name"],
 
-                        # Основные данные
-                        title=full.get("title", ""),
-                        description=full.get("description"),
-                        article=full.get("article"),
-                        brand=full.get("brand"),
-                        country_of_origin=full.get("country_of_origin"),
-                        warranty_months=full.get("warranty_months"),
-                        category=full.get("category"),
-                        created_at=full.get("created_at"),
-
                         # Классификация
                         okpd2_code=classified["okpd2_code"],
                         okpd2_name=classified.get("okpd2_name", ""),
-                        okpd_group=classified.get("okpd_group", []),
 
-                        # Атрибуты
-                        original_attributes=[
-                            ProductAttribute(
-                                attr_name=attr.get("attr_name", ""),
-                                attr_value=attr.get("attr_value", "")
-                            )
-                            for attr in full.get("attributes", [])
-                        ],
+                        # Результаты стандартизации
                         standardized_attributes=standardized_attrs,
-
-                        # Поставщики
-                        suppliers=full.get("suppliers", []),
 
                         # Метаданные
                         standardization_status=StandardizationStatus.STANDARDIZED,

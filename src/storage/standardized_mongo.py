@@ -42,8 +42,6 @@ class StandardizedMongoStore:
             # Индексы для поиска
             await self.collection.create_index("okpd2_code")
             await self.collection.create_index("standardization_status")
-            await self.collection.create_index("brand")
-            await self.collection.create_index("category")
             await self.collection.create_index("standardization_completed_at")
 
             # Составной индекс для поиска по стандартизированным атрибутам
@@ -126,14 +124,6 @@ class StandardizedMongoStore:
                         "count": {"$sum": 1}
                     }}
                 ],
-                "by_brand": [
-                    {"$group": {
-                        "_id": "$brand",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}},
-                    {"$limit": 10}
-                ],
                 "attributes_stats": [
                     {"$unwind": "$standardized_attributes"},
                     {"$group": {
@@ -157,7 +147,6 @@ class StandardizedMongoStore:
             "total": facets["total"][0]["count"] if facets["total"] else 0,
             "by_status": {s["_id"]: s["count"] for s in facets["by_status"] if s["_id"]},
             "by_okpd_class": {c["_id"]: c["count"] for c in facets["by_okpd_class"] if c["_id"]},
-            "top_brands": [(b["_id"], b["count"]) for b in facets["by_brand"] if b["_id"]],
             "top_attributes": [(a["_id"], a["count"]) for a in facets["attributes_stats"]]
         }
 
