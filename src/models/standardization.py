@@ -22,6 +22,7 @@ class StandardizedAttribute(BaseModel):
     """Стандартизированный атрибут"""
     standard_name: str = Field(..., description="Стандартизированное название")
     standard_value: str = Field(..., description="Стандартизированное значение")
+    unit: Optional[str] = Field(None, description="Единица измерения")
     characteristic_type: str = Field(..., description="Тип характеристики из стандарта")
 
 

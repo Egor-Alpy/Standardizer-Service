@@ -129,13 +129,15 @@ class AIStandardizer:
 ПРАВИЛА СТАНДАРТИЗАЦИИ:
 - Название характеристики должно ТОЧНО соответствовать ключу из стандарта
 - Значение должно быть из списка "values" или с правильными единицами измерения из "units"
+- Если у характеристики есть единицы измерения - ОБЯЗАТЕЛЬНО укажи их в поле "unit"
 - При сопоставлении учитывай смысл атрибута, а не только точное совпадение названия
 - Приводи единицы измерения к стандартным из списка "units"
 - Если значение не подходит под стандарт - выбери ближайшее подходящее или пропусти атрибут
-- characteristic_type - это ключ характеристики из стандарта (например, "Вес", "Цвет" и т.д.)
+- characteristic_type - это ключ характеристики из стандарта
 
 ПРИМЕРЫ СОПОСТАВЛЕНИЯ:
-- "количество слоев" → "Вид зерна" (если речь о зерне)
+- "количество слоев: 2" → standard_value: "2", unit: "слой"
+- "вес 500г" → standard_value: "500", unit: "г"
 - "цвет изделия" → "Цвет" (если есть в стандарте)
 - "масса нетто" → "Вес" (если есть в стандарте)
 
@@ -146,7 +148,8 @@ class AIStandardizer:
     "standardized_attributes": [
       {{
         "standard_name": "Название из ключа стандарта",
-        "standard_value": "Стандартизированное значение из values или с units",
+        "standard_value": "Стандартизированное значение",
+        "unit": "Единица измерения из units или null",
         "characteristic_type": "Ключ характеристики из стандарта"
       }}
     ]
@@ -361,6 +364,7 @@ class AIStandardizer:
                         standardized_attr = StandardizedAttribute(
                             standard_name=attr.get("standard_name", ""),
                             standard_value=attr.get("standard_value", ""),
+                            unit=attr.get("unit"),  # Может быть None
                             characteristic_type=attr.get("characteristic_type", "")
                         )
                         standardized_attrs.append(standardized_attr)
