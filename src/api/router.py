@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from src.api.endpoints import standardization, batch_standardization
+from src.api.endpoints import standardization, batch_standardization, tender_standardization
 
 router = APIRouter()
 
@@ -9,9 +9,14 @@ router.include_router(
     tags=["standardization"]
 )
 
-# НОВОЕ: добавляем роутер для batch обработки
 router.include_router(
     batch_standardization.router,
     prefix="/standardization",
     tags=["batch_standardization"]
+)
+
+router.include_router(
+    tender_standardization.router,
+    prefix="/standardization",
+    tags=["tender_standardization"]
 )

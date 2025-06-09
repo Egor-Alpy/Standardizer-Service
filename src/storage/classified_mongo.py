@@ -30,7 +30,7 @@ class ClassifiedMongoStore:
     ) -> List[ProductForStandardization]:
         """Получить товары готовые для стандартизации"""
         query = {
-            "status_stg2": "classified",
+            "status_stage2": "classified",
             "okpd2_code": {"$exists": True, "$ne": None}
         }
 
@@ -108,7 +108,7 @@ class ClassifiedMongoStore:
     async def get_statistics(self) -> Dict[str, int]:
         """Получить статистику по стандартизации"""
         pipeline = [
-            {"$match": {"status_stg2": "classified"}},
+            {"$match": {"status_stage2": "classified"}},
             {"$facet": {
                 "total": [{"$count": "count"}],
                 "by_status": [
@@ -145,7 +145,7 @@ class ClassifiedMongoStore:
         """Получить статистику по группам ОКПД2 (первые 4 цифры)"""
         pipeline = [
             {"$match": {
-                "status_stg2": "classified",
+                "status_stage2": "classified",
                 "$or": [
                     {"standardization_status": {"$exists": False}},
                     {"standardization_status": "pending"}

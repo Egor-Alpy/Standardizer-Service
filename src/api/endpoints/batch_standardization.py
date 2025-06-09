@@ -53,8 +53,8 @@ async def standardize_products_batch(
 
             product_for_std = ProductForStandardization(
                 id=product.id,
-                old_mongo_id=product.id,  # В данном случае используем тот же ID
-                collection_name="batch_input",  # Фиктивное имя коллекции для batch
+                source_id=product.id,  # В данном случае используем тот же ID как source_id
+                source_collection="batch_input",  # Фиктивное имя коллекции для batch
                 title=product.title,
                 okpd2_code=product.okpd2_code,
                 attributes=attributes
@@ -112,4 +112,3 @@ async def standardize_products_batch(
     except Exception as e:
         logger.error(f"Error in batch standardization: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    

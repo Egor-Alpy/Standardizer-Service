@@ -35,6 +35,11 @@ class ProductFetcher:
             collection_name: str
     ) -> Optional[Dict[str, Any]]:
         """Получить полные данные товара из исходной БД"""
+        # Специальная обработка для тендеров
+        if collection_name == "tender":
+            logger.debug(f"Skipping fetch for tender product {old_mongo_id}")
+            return None
+
         try:
             collection = self._get_collection(collection_name)
 

@@ -137,7 +137,7 @@ async def reset_failed_products(
 
     result = await classified_store.collection.update_many(
         {
-            "status_stg2": "classified",
+            "status_stage2": "classified",  # Изменено с status_stg2
             "standardization_status": "failed"
         },
         {"$set": {"standardization_status": "pending"}}

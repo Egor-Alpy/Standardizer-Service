@@ -71,39 +71,69 @@ class StandardizationService:
             product_map = {}  # Для быстрого доступа по ID
 
             for classified_product in classified_products:
-                # Получаем полную информацию о товаре из исходной БД
-                full_product = await self.product_fetcher.fetch_product_details(
-                    classified_product["old_mongo_id"],
-                    classified_product["collection_name"]
-                )
+                # Проверяем, является ли это товаром из тендера
+                if classified_product.get("source_collection") == "tender":
+                    # Для тендеров используем данные прямо из classified_product
+                    # так как полных данных в source БД нет
+                    logger.info(f"Processing tender product {classified_product.get('source_id')}")
 
-                if not full_product:
-                    logger.warning(f"Product not found in source: {classified_product['old_mongo_id']}")
-                    continue
+                    # Атрибуты должны быть уже в classified_product для тендеров
+                    attributes = [
+                        ProductAttribute(
+                            attr_name=attr.get("attr_name", ""),
+                            attr_value=attr.get("attr_value", "")
+                        )
+                        for attr in classified_product.get("attributes", [])
+                    ]
 
-                # Создаем модель для AI
-                attributes = [
-                    ProductAttribute(
-                        attr_name=attr.get("attr_name", ""),
-                        attr_value=attr.get("attr_value", "")
+                    product_for_ai = ProductForStandardization(
+                        id=str(classified_product["_id"]),
+                        source_id=classified_product["source_id"],
+                        source_collection=classified_product["source_collection"],
+                        title=classified_product.get("title", ""),
+                        okpd2_code=classified_product["okpd2_code"],
+                        attributes=attributes
                     )
-                    for attr in full_product.get("attributes", [])
-                ]
 
-                product_for_ai = ProductForStandardization(
-                    id=str(classified_product["_id"]),
-                    old_mongo_id=classified_product["old_mongo_id"],
-                    collection_name=classified_product["collection_name"],
-                    title=full_product.get("title", ""),
-                    okpd2_code=classified_product["okpd2_code"],
-                    attributes=attributes
-                )
+                    products_for_ai.append(product_for_ai)
+                    product_map[str(classified_product["_id"])] = {
+                        "classified": classified_product,
+                        "full": classified_product  # Для тендеров используем те же данные
+                    }
+                else:
+                    # Для обычных товаров получаем полную информацию из исходной БД
+                    full_product = await self.product_fetcher.fetch_product_details(
+                        classified_product["source_id"],
+                        classified_product["source_collection"]
+                    )
 
-                products_for_ai.append(product_for_ai)
-                product_map[str(classified_product["_id"])] = {
-                    "classified": classified_product,
-                    "full": full_product
-                }
+                    if not full_product:
+                        logger.warning(f"Product not found in source: {classified_product['source_id']}")
+                        continue
+
+                    # Создаем модель для AI
+                    attributes = [
+                        ProductAttribute(
+                            attr_name=attr.get("attr_name", ""),
+                            attr_value=attr.get("attr_value", "")
+                        )
+                        for attr in full_product.get("attributes", [])
+                    ]
+
+                    product_for_ai = ProductForStandardization(
+                        id=str(classified_product["_id"]),
+                        source_id=classified_product["source_id"],
+                        source_collection=classified_product["source_collection"],
+                        title=full_product.get("title", ""),
+                        okpd2_code=classified_product["okpd2_code"],
+                        attributes=attributes
+                    )
+
+                    products_for_ai.append(product_for_ai)
+                    product_map[str(classified_product["_id"])] = {
+                        "classified": classified_product,
+                        "full": full_product
+                    }
 
             if not products_for_ai:
                 logger.warning("No valid products for standardization")
@@ -135,9 +165,9 @@ class StandardizationService:
                     # Создаем стандартизированный товар
                     standardized_product = StandardizedProduct(
                         # Идентификаторы для связи
-                        old_mongo_id=classified["old_mongo_id"],
+                        old_mongo_id=classified["source_id"],  # Используем source_id как old_mongo_id
                         classified_mongo_id=str(classified["_id"]),
-                        collection_name=classified["collection_name"],
+                        collection_name=classified["source_collection"],  # Используем source_collection
 
                         # Классификация
                         okpd2_code=classified["okpd2_code"],
@@ -238,7 +268,7 @@ class StandardizationService:
                 # Получаем список всех уникальных ОКПД кодов
                 pipeline = [
                     {"$match": {
-                        "status_stg2": "classified",
+                        "status_stage2": "classified",
                         "$or": [
                             {"standardization_status": {"$exists": False}},
                             {"standardization_status": "pending"}
@@ -325,7 +355,7 @@ class StandardizationService:
             try:
                 # Проверяем количество товаров для обработки
                 count = await self.classified_store.collection.count_documents({
-                    "status_stg2": "classified",
+                    "status_stage2": "classified",
                     "$or": [
                         {"standardization_status": {"$exists": False}},
                         {"standardization_status": "pending"}

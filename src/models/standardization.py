@@ -29,8 +29,8 @@ class StandardizedAttribute(BaseModel):
 class ProductForStandardization(BaseModel):
     """Товар для стандартизации"""
     id: str = Field(..., alias="_id")
-    old_mongo_id: str
-    collection_name: str
+    source_id: str  # Изменено с old_mongo_id
+    source_collection: str  # Изменено с collection_name
     title: str
     okpd2_code: str
     attributes: List[ProductAttribute]
