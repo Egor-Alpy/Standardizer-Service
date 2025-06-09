@@ -185,7 +185,7 @@ class ClassifiedMongoStore:
         """Проверить подключение к БД"""
         try:
             await self.client.admin.command('ping')
-            logger.info("Successfully connected to classified MongoDB")
+            logger.info(f"Successfully connected to classified MongoDB")
             return True
         except Exception as e:
             logger.error(f"Failed to connect to classified MongoDB: {e}")

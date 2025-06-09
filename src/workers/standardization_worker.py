@@ -39,7 +39,7 @@ class StandardizationWorker:
 
         try:
             # Инициализируем хранилища
-            logger.info("Connecting to classified MongoDB...")
+            logger.info(f"Connecting to classified MongoDB, collection: {settings.classified_collection_name}...")
             self.classified_store = ClassifiedMongoStore(
                 settings.classified_mongodb_database,
                 settings.classified_collection_name  # Используем из настроек
