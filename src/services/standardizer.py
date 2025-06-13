@@ -162,6 +162,51 @@ class StandardizationService:
                     # Успешная стандартизация
                     standardized_attrs = standardization_results[product_id]
 
+                    # Получаем исходные атрибуты товара
+                    original_attrs = [
+                        ProductAttribute(
+                            attr_name=attr.get("attr_name", ""),
+                            attr_value=attr.get("attr_value", "")
+                        )
+                        for attr in full.get("attributes", [])
+                    ]
+
+                    # Вычисляем нестандартизированные атрибуты
+                    # Создаем множество стандартизированных имен атрибутов (в нижнем регистре для сравнения)
+                    standardized_attr_names = {
+                        attr.standard_name.lower() for attr in standardized_attrs
+                    }
+
+                    # Также добавляем исходные названия атрибутов, которые были стандартизированы
+                    # (так как AI мог сопоставить атрибут с другим названием)
+                    # Для этого нужно проверить какие исходные атрибуты были обработаны
+                    product_for_ai = next((p for p in products_for_ai if p.id == product_id), None)
+                    if product_for_ai:
+                        # Создаем множество исходных названий, которые были отправлены в AI
+                        sent_attr_names = {attr.attr_name.lower() for attr in product_for_ai.attributes}
+
+                        # Если количество стандартизированных атрибутов меньше отправленных,
+                        # значит некоторые не были стандартизированы
+                        unstandardized_attrs = []
+                        for orig_attr in original_attrs:
+                            attr_name_lower = orig_attr.attr_name.lower()
+
+                            # Проверяем, был ли этот атрибут стандартизирован
+                            # (простая эвристика - если название не встречается среди стандартизированных)
+                            is_standardized = False
+                            for std_attr in standardized_attrs:
+                                # Проверяем по точному совпадению или частичному вхождению
+                                if (attr_name_lower == std_attr.standard_name.lower() or
+                                        attr_name_lower in std_attr.standard_name.lower() or
+                                        std_attr.standard_name.lower() in attr_name_lower):
+                                    is_standardized = True
+                                    break
+
+                            if not is_standardized:
+                                unstandardized_attrs.append(orig_attr)
+                    else:
+                        unstandardized_attrs = []
+
                     # Создаем стандартизированный товар
                     standardized_product = StandardizedProduct(
                         # Идентификаторы для связи
@@ -173,8 +218,14 @@ class StandardizationService:
                         okpd2_code=classified["okpd2_code"],
                         okpd2_name=classified.get("okpd2_name", ""),
 
+                        # Исходные атрибуты
+                        original_attributes=original_attrs,
+
                         # Результаты стандартизации
                         standardized_attributes=standardized_attrs,
+
+                        # Нестандартизированные атрибуты
+                        unstandardized_attributes=unstandardized_attrs,
 
                         # Метаданные
                         standardization_status=StandardizationStatus.STANDARDIZED,

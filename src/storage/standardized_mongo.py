@@ -48,6 +48,13 @@ class StandardizedMongoStore:
             await self.collection.create_index("standardized_attributes.standard_name")
             await self.collection.create_index("standardized_attributes.standard_value")
 
+            # Индексы для исходных атрибутов
+            await self.collection.create_index("original_attributes.attr_name")
+            await self.collection.create_index("original_attributes.attr_value")
+
+            # Индексы для нестандартизированных атрибутов
+            await self.collection.create_index("unstandardized_attributes.attr_name")
+
             logger.info("MongoDB indexes created successfully")
         except Exception as e:
             logger.warning(f"Error creating indexes (may already exist): {e}")
@@ -132,6 +139,37 @@ class StandardizedMongoStore:
                     }},
                     {"$sort": {"count": -1}},
                     {"$limit": 20}
+                ],
+                "unstandardized_stats": [
+                    {"$unwind": "$unstandardized_attributes"},
+                    {"$group": {
+                        "_id": "$unstandardized_attributes.attr_name",
+                        "count": {"$sum": 1}
+                    }},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 20}
+                ],
+                "coverage_stats": [
+                    {"$project": {
+                        "total_attrs": {"$size": "$original_attributes"},
+                        "standardized_attrs": {"$size": "$standardized_attributes"},
+                        "unstandardized_attrs": {"$size": "$unstandardized_attributes"}
+                    }},
+                    {"$group": {
+                        "_id": null,
+                        "avg_total_attrs": {"$avg": "$total_attrs"},
+                        "avg_standardized_attrs": {"$avg": "$standardized_attrs"},
+                        "avg_unstandardized_attrs": {"$avg": "$unstandardized_attrs"},
+                        "avg_coverage": {
+                            "$avg": {
+                                "$cond": [
+                                    {"$gt": ["$total_attrs", 0]},
+                                    {"$divide": ["$standardized_attrs", "$total_attrs"]},
+                                    0
+                                ]
+                            }
+                        }
+                    }}
                 ]
             }}
         ]
@@ -147,8 +185,19 @@ class StandardizedMongoStore:
             "total": facets["total"][0]["count"] if facets["total"] else 0,
             "by_status": {s["_id"]: s["count"] for s in facets["by_status"] if s["_id"]},
             "by_okpd_class": {c["_id"]: c["count"] for c in facets["by_okpd_class"] if c["_id"]},
-            "top_attributes": [(a["_id"], a["count"]) for a in facets["attributes_stats"]]
+            "top_attributes": [(a["_id"], a["count"]) for a in facets["attributes_stats"]],
+            "top_unstandardized": [(a["_id"], a["count"]) for a in facets["unstandardized_stats"]]
         }
+
+        # Добавляем статистику покрытия если есть данные
+        if facets["coverage_stats"]:
+            coverage = facets["coverage_stats"][0]
+            stats["coverage"] = {
+                "avg_total_attributes": round(coverage.get("avg_total_attrs", 0), 1),
+                "avg_standardized_attributes": round(coverage.get("avg_standardized_attrs", 0), 1),
+                "avg_unstandardized_attributes": round(coverage.get("avg_unstandardized_attrs", 0), 1),
+                "avg_coverage_percentage": round(coverage.get("avg_coverage", 0) * 100, 1)
+            }
 
         return stats
 

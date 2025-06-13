@@ -5,15 +5,18 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6378:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - tender-services
 
   # API сервис
   api:
+    container_name: standardizer-service
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - .env
     environment:
@@ -23,6 +26,8 @@ services:
       - HTTPS_PROXY=${HTTPS_PROXY}
       - SOCKS_PROXY=${SOCKS_PROXY}
       - NO_PROXY=localhost,127.0.0.1,redis
+    networks:
+      - tender-services
     depends_on:
       - redis
     extra_hosts:
@@ -54,10 +59,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./src/data:/app/src/data:ro  # Монтируем файл стандартов
-    # Используем host network mode для доступа к локальным MongoDB
+      - ./src/data:/app/src/data:ro
     network_mode: "host"
-    command: python -m src.workers.standardization_worker --worker-id std_worker_1
+    # command: python -m src.workers.standardization_worker --worker-id std_worker_1
+    # НА ЭТУ:
+    command: tail -f /dev/null  # Держит контейнер запущенным без работы
 
   # Второй воркер (опционально)
   standardization-worker-2:
@@ -83,10 +89,16 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./src/data:/app/src/data:ro
-    network_mode: "host"
     command: python -m src.workers.standardization_worker --worker-id std_worker_2
     profiles:
       - scale  # Запускается только при docker-compose --profile scale up
+    networks:
+      - tender-services
+
 
 volumes:
   redis_data:
+
+networks:
+  tender-services:
+    external: true

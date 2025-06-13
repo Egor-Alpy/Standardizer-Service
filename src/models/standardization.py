@@ -56,8 +56,15 @@ class StandardizedProduct(BaseModel):
     okpd2_code: str
     okpd2_name: str
 
+    # Исходные атрибуты товара
+    original_attributes: List[ProductAttribute] = Field(..., description="Все исходные атрибуты товара")
+
     # Результаты стандартизации
     standardized_attributes: List[StandardizedAttribute] = Field(..., description="Стандартизированные атрибуты")
+
+    # Нестандартизированные атрибуты (те, которые не удалось сопоставить со стандартами)
+    unstandardized_attributes: List[ProductAttribute] = Field(default_factory=list,
+                                                              description="Атрибуты, которые не удалось стандартизировать")
 
     # Метаданные стандартизации
     standardization_status: StandardizationStatus = Field(StandardizationStatus.STANDARDIZED)

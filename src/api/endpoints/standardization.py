@@ -62,7 +62,9 @@ async def get_standardization_statistics(
         "failed": failed,
         "standardization_percentage": standardization_percentage,
         "by_okpd_class": classified_stats.get("by_okpd_class", {}),
-        "top_attributes": standardized_stats.get("top_attributes", [])
+        "top_attributes": standardized_stats.get("top_attributes", []),
+        "top_unstandardized": standardized_stats.get("top_unstandardized", []),
+        "coverage": standardized_stats.get("coverage", {})
     }
 
 
@@ -211,6 +213,67 @@ async def get_attributes_summary(
         "attributes": results,
         "total_attributes": len(results),
         "okpd_class_filter": okpd_class
+    }
+
+
+@router.get("/attributes/unstandardized")
+async def get_unstandardized_attributes_analysis(
+        okpd_class: Optional[str] = Query(None, description="Filter by OKPD2 class (2 digits)"),
+        limit: int = Query(50, ge=1, le=200),
+        standardized_store=Depends(get_standardized_store),
+        api_key: str = Depends(verify_api_key)
+):
+    """Получить анализ нестандартизированных атрибутов для улучшения стандартов"""
+    pipeline = [
+        {"$unwind": "$unstandardized_attributes"},
+        {"$group": {
+            "_id": {
+                "name": "$unstandardized_attributes.attr_name",
+                "okpd_class": {"$substr": ["$okpd2_code", 0, 2]}
+            },
+            "count": {"$sum": 1},
+            "sample_values": {
+                "$addToSet": {
+                    "$substr": ["$unstandardized_attributes.attr_value", 0, 100]
+                }
+            },
+            "products_count": {"$addToSet": "$_id"}
+        }},
+        {"$project": {
+            "attribute_name": "$_id.name",
+            "okpd_class": "$_id.okpd_class",
+            "occurrences": "$count",
+            "unique_products": {"$size": "$products_count"},
+            "sample_values": {"$slice": ["$sample_values", 10]}
+        }},
+        {"$sort": {"occurrences": -1}},
+        {"$limit": limit}
+    ]
+
+    if okpd_class:
+        pipeline.insert(0, {"$match": {"okpd2_code": {"$regex": f"^{okpd_class}"}}})
+
+    cursor = standardized_store.collection.aggregate(pipeline)
+    results = await cursor.to_list(length=None)
+
+    # Группируем по классам ОКПД2 для удобства анализа
+    by_okpd_class = {}
+    for item in results:
+        okpd = item["okpd_class"]
+        if okpd not in by_okpd_class:
+            by_okpd_class[okpd] = []
+        by_okpd_class[okpd].append({
+            "attribute_name": item["attribute_name"],
+            "occurrences": item["occurrences"],
+            "unique_products": item["unique_products"],
+            "sample_values": item["sample_values"]
+        })
+
+    return {
+        "total_unstandardized_attributes": len(results),
+        "filter": {"okpd_class": okpd_class} if okpd_class else {},
+        "by_okpd_class": by_okpd_class,
+        "top_unstandardized": results[:20]  # Топ-20 самых частых
     }
 
 
