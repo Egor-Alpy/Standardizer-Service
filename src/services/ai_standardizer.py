@@ -252,7 +252,12 @@ class AIStandardizer:
             self,
             products: List[ProductForStandardization]
     ) -> Dict[str, List[StandardizedAttribute]]:
-        """Стандартизировать батч товаров"""
+        """
+        Стандартизировать батч товаров
+
+        Returns:
+            Dict с результатами для КАЖДОГО товара (даже если пустой массив)
+        """
         if not products:
             return {}
 
@@ -282,8 +287,8 @@ class AIStandardizer:
         # Обрабатываем каждую группу отдельно
         for okpd_group, group_products in products_by_group.items():
             if okpd_group == "UNMAPPED":
-                logger.warning(f"Skipping {len(group_products)} products with unmapped OKPD codes")
-                # Помечаем как failed
+                logger.warning(f"Processing {len(group_products)} products with unmapped OKPD codes")
+                # Возвращаем пустой результат для этих товаров (все атрибуты будут нестандартизированными)
                 for product in group_products:
                     all_results[product.product_id] = []
                 continue
@@ -295,6 +300,9 @@ class AIStandardizer:
                 cached_content = self._prepare_cached_content(okpd_group)
                 if not cached_content:
                     logger.error(f"Failed to prepare cache for group {okpd_group}")
+                    # Возвращаем пустые результаты для всех товаров группы
+                    for product in group_products:
+                        all_results[product.product_id] = []
                     continue
                 self.group_caches[okpd_group] = cached_content
 
@@ -328,10 +336,22 @@ class AIStandardizer:
 
                 # Парсим результаты
                 results = self._parse_response(response)
+
+                # Убеждаемся, что у нас есть результат для каждого товара
+                for product in group_products:
+                    if product.product_id not in results:
+                        # Если AI не вернул результат для товара, добавляем пустой массив
+                        logger.warning(
+                            f"No AI results for product {product.product_id}, will save with all unstandardized attributes")
+                        results[product.product_id] = []
+
                 all_results.update(results)
 
             except Exception as e:
                 logger.error(f"Error processing group {okpd_group}: {e}")
+                # При ошибке все товары группы получают пустые результаты
+                for product in group_products:
+                    all_results[product.product_id] = []
                 continue
 
         return all_results

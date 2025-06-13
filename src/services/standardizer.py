@@ -74,7 +74,6 @@ class StandardizationService:
                 # Проверяем, является ли это товаром из тендера
                 if classified_product.get("source_collection") == "tender":
                     # Для тендеров используем данные прямо из classified_product
-                    # так как полных данных в source БД нет
                     logger.info(f"Processing tender product {classified_product.get('source_id')}")
 
                     # Атрибуты должны быть уже в classified_product для тендеров
@@ -109,7 +108,8 @@ class StandardizationService:
 
                     if not full_product:
                         logger.warning(f"Product not found in source: {classified_product['source_id']}")
-                        continue
+                        # ВАЖНО: Не пропускаем товар, используем данные из classified
+                        full_product = classified_product
 
                     # Создаем модель для AI
                     attributes = [
@@ -124,7 +124,7 @@ class StandardizationService:
                         id=str(classified_product["_id"]),
                         source_id=classified_product["source_id"],
                         source_collection=classified_product["source_collection"],
-                        title=full_product.get("title", ""),
+                        title=full_product.get("title", "") or classified_product.get("title", ""),
                         okpd2_code=classified_product["okpd2_code"],
                         attributes=attributes
                     )
@@ -141,7 +141,7 @@ class StandardizationService:
                     "batch_id": batch_id,
                     "total": len(classified_products),
                     "standardized": 0,
-                    "failed": len(classified_products)
+                    "failed": 0
                 }
 
             # 3. Отправляем в AI для стандартизации
@@ -150,7 +150,6 @@ class StandardizationService:
 
             # 4. Обрабатываем результаты
             standardized_count = 0
-            failed_count = 0
             standardized_products = []
             status_updates = []
 
@@ -158,109 +157,96 @@ class StandardizationService:
                 classified = product_data["classified"]
                 full = product_data["full"]
 
+                # Получаем исходные атрибуты товара
+                original_attrs = [
+                    ProductAttribute(
+                        attr_name=attr.get("attr_name", ""),
+                        attr_value=attr.get("attr_value", "")
+                    )
+                    for attr in full.get("attributes", [])
+                ]
+
+                # ВАЖНОЕ ИЗМЕНЕНИЕ: Всегда создаем запись в БД стандартизированных товаров
                 if product_id in standardization_results:
                     # Успешная стандартизация
                     standardized_attrs = standardization_results[product_id]
 
-                    # Получаем исходные атрибуты товара
-                    original_attrs = [
-                        ProductAttribute(
-                            attr_name=attr.get("attr_name", ""),
-                            attr_value=attr.get("attr_value", "")
-                        )
-                        for attr in full.get("attributes", [])
-                    ]
-
                     # Вычисляем нестандартизированные атрибуты
-                    # Создаем множество стандартизированных имен атрибутов (в нижнем регистре для сравнения)
                     standardized_attr_names = {
                         attr.standard_name.lower() for attr in standardized_attrs
                     }
 
-                    # Также добавляем исходные названия атрибутов, которые были стандартизированы
-                    # (так как AI мог сопоставить атрибут с другим названием)
-                    # Для этого нужно проверить какие исходные атрибуты были обработаны
-                    product_for_ai = next((p for p in products_for_ai if p.id == product_id), None)
-                    if product_for_ai:
-                        # Создаем множество исходных названий, которые были отправлены в AI
-                        sent_attr_names = {attr.attr_name.lower() for attr in product_for_ai.attributes}
+                    unstandardized_attrs = []
+                    for orig_attr in original_attrs:
+                        attr_name_lower = orig_attr.attr_name.lower()
 
-                        # Если количество стандартизированных атрибутов меньше отправленных,
-                        # значит некоторые не были стандартизированы
-                        unstandardized_attrs = []
-                        for orig_attr in original_attrs:
-                            attr_name_lower = orig_attr.attr_name.lower()
+                        # Проверяем, был ли этот атрибут стандартизирован
+                        is_standardized = False
+                        for std_attr in standardized_attrs:
+                            if (attr_name_lower == std_attr.standard_name.lower() or
+                                    attr_name_lower in std_attr.standard_name.lower() or
+                                    std_attr.standard_name.lower() in attr_name_lower):
+                                is_standardized = True
+                                break
 
-                            # Проверяем, был ли этот атрибут стандартизирован
-                            # (простая эвристика - если название не встречается среди стандартизированных)
-                            is_standardized = False
-                            for std_attr in standardized_attrs:
-                                # Проверяем по точному совпадению или частичному вхождению
-                                if (attr_name_lower == std_attr.standard_name.lower() or
-                                        attr_name_lower in std_attr.standard_name.lower() or
-                                        std_attr.standard_name.lower() in attr_name_lower):
-                                    is_standardized = True
-                                    break
+                        if not is_standardized:
+                            unstandardized_attrs.append(orig_attr)
 
-                            if not is_standardized:
-                                unstandardized_attrs.append(orig_attr)
-                    else:
-                        unstandardized_attrs = []
-
-                    # Создаем стандартизированный товар
-                    standardized_product = StandardizedProduct(
-                        # Идентификаторы для связи
-                        old_mongo_id=classified["source_id"],  # Используем source_id как old_mongo_id
-                        classified_mongo_id=str(classified["_id"]),
-                        collection_name=classified["source_collection"],  # Используем source_collection
-
-                        # Классификация
-                        okpd2_code=classified["okpd2_code"],
-                        okpd2_name=classified.get("okpd2_name", ""),
-
-                        # Исходные атрибуты
-                        original_attributes=original_attrs,
-
-                        # Результаты стандартизации
-                        standardized_attributes=standardized_attrs,
-
-                        # Нестандартизированные атрибуты
-                        unstandardized_attributes=unstandardized_attrs,
-
-                        # Метаданные
-                        standardization_status=StandardizationStatus.STANDARDIZED,
-                        standardization_completed_at=datetime.utcnow(),
-                        standardization_batch_id=batch_id,
-                        standardization_worker_id=self.worker_id
+                    logger.info(
+                        f"Product {product_id}: {len(standardized_attrs)} standardized, "
+                        f"{len(unstandardized_attrs)} unstandardized attributes"
                     )
 
-                    standardized_products.append(standardized_product)
-                    standardized_count += 1
-
-                    # Обновляем статус в классифицированной БД
-                    status_updates.append({
-                        "_id": product_id,
-                        "data": {
-                            "standardization_status": "standardized",
-                            "standardization_completed_at": datetime.utcnow()
-                        }
-                    })
-
                 else:
-                    # Не удалось стандартизировать
-                    failed_count += 1
-                    status_updates.append({
-                        "_id": product_id,
-                        "data": {
-                            "standardization_status": "failed",
-                            "standardization_error": "No standardization results"
-                        }
-                    })
+                    # НЕ удалось стандартизировать - все атрибуты идут в нестандартизированные
+                    logger.warning(f"No AI standardization results for product {product_id}, saving with all unstandardized attributes")
+                    standardized_attrs = []
+                    unstandardized_attrs = original_attrs
 
-            # 5. Сохраняем результаты
+                # ВСЕГДА создаем стандартизированный товар
+                standardized_product = StandardizedProduct(
+                    # Идентификаторы для связи
+                    old_mongo_id=classified["source_id"],
+                    classified_mongo_id=str(classified["_id"]),
+                    collection_name=classified["source_collection"],
+
+                    # Классификация
+                    okpd2_code=classified["okpd2_code"],
+                    okpd2_name=classified.get("okpd2_name", ""),
+
+                    # Исходные атрибуты
+                    original_attributes=original_attrs,
+
+                    # Результаты стандартизации (может быть пустым)
+                    standardized_attributes=standardized_attrs,
+
+                    # Нестандартизированные атрибуты
+                    unstandardized_attributes=unstandardized_attrs,
+
+                    # Метаданные
+                    standardization_status=StandardizationStatus.STANDARDIZED,
+                    standardization_completed_at=datetime.utcnow(),
+                    standardization_batch_id=batch_id,
+                    standardization_worker_id=self.worker_id
+                )
+
+                standardized_products.append(standardized_product)
+                standardized_count += 1
+
+                # Обновляем статус в классифицированной БД как успешный
+                status_updates.append({
+                    "_id": product_id,
+                    "data": {
+                        "standardization_status": "standardized",
+                        "standardization_completed_at": datetime.utcnow(),
+                        "has_standardized_attrs": len(standardized_attrs) > 0
+                    }
+                })
+
+            # 5. Сохраняем ВСЕ результаты
             if standardized_products:
                 inserted = await self.standardized_store.bulk_insert_products(standardized_products)
-                logger.info(f"Inserted {inserted} standardized products")
+                logger.info(f"Inserted {inserted} products into standardized database")
 
             # 6. Обновляем статусы в классифицированной БД
             if status_updates:
@@ -268,14 +254,15 @@ class StandardizationService:
 
             logger.info(
                 f"Batch {batch_id} completed: "
-                f"{standardized_count} standardized, {failed_count} failed"
+                f"{standardized_count} products saved to standardized DB "
+                f"(all products are saved, even without standardization)"
             )
 
             return {
                 "batch_id": batch_id,
                 "total": len(classified_products),
                 "standardized": standardized_count,
-                "failed": failed_count
+                "failed": 0  # Теперь все товары сохраняются, поэтому failed = 0
             }
 
         except Exception as e:

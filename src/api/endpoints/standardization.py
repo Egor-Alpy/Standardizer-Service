@@ -53,6 +53,19 @@ async def get_standardization_statistics(
     standardized = by_status.get("standardized", 0)
     failed = by_status.get("failed", 0)
 
+    # Добавляем информацию о товарах с пустыми стандартизированными атрибутами
+    empty_standardized_pipeline = [
+        {"$match": {"$or": [
+            {"standardized_attributes": {"$size": 0}},
+            {"standardized_attributes": {"$exists": False}}
+        ]}},
+        {"$count": "count"}
+    ]
+
+    cursor = standardized_store.collection.aggregate(empty_standardized_pipeline)
+    result = await cursor.to_list(length=1)
+    products_without_standardization = result[0]["count"] if result else 0
+
     return {
         "total_classified": total_classified,
         "total_standardized": total_standardized,
@@ -60,6 +73,7 @@ async def get_standardization_statistics(
         "processing": processing,
         "standardized": standardized,
         "failed": failed,
+        "products_without_standardization": products_without_standardization,
         "standardization_percentage": standardization_percentage,
         "by_okpd_class": classified_stats.get("by_okpd_class", {}),
         "top_attributes": standardized_stats.get("top_attributes", []),
