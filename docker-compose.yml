@@ -44,7 +44,7 @@ services:
     environment:
       - WORKER_ID=std_worker_1
       - REDIS_URL=redis://redis:6379
-      - STANDARDIZATION_BATCH_SIZE=5
+      - STANDARDIZATION_BATCH_SIZE=15
       - RATE_LIMIT_DELAY=5
       - MAX_RETRIES=5
       - ENABLE_PROMPT_CACHING=true
@@ -61,9 +61,9 @@ services:
     volumes:
       - ./src/data:/app/src/data:ro
     network_mode: "host"
-    # command: python -m src.workers.standardization_worker --worker-id std_worker_1
+    command: python -m src.workers.standardization_worker --worker-id std_worker_1
     # НА ЭТУ:
-    command: tail -f /dev/null  # Держит контейнер запущенным без работы
+#    command: tail -f /dev/null  # Держит контейнер запущенным без работы
 
   # Второй воркер (опционально)
   standardization-worker-2:

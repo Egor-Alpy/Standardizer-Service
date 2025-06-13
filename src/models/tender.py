@@ -74,7 +74,7 @@ class TenderStatistics(BaseModel):
 
 class TenderStandardizationRequest(BaseModel):
     """Запрос на стандартизацию тендера"""
-    # tender: Tender
+    tender: Tender
     statistics: Optional[TenderStatistics] = None
 
 
