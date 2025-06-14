@@ -13,15 +13,11 @@ COPY requirements.txt .
 # Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование кода приложения
-COPY src/ ./src/
-
-# Создание директории для данных
-RUN mkdir -p /app/src/data
-
 # Создание пользователя
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
+
+COPY --chown=appuser:appuser src/ ./src/
 
 # Переменные окружения
 ENV PYTHONPATH=/app
