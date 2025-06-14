@@ -40,7 +40,17 @@ class Settings(BaseSettings):
     standardized_collection_name: str = "standardized_products"  # Имя коллекции
 
     # Redis
-    redis_url: str = "redis://localhost:6379"
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_password: Optional[str] = None
+
+    @property
+    def redis_connection_string(self) -> str:
+        if self.redis_password:
+            redis_url = f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}"
+        else:
+            redis_url = f"redis://:{self.redis_host}:{self.redis_port}"
+        return redis_url
 
     # Anthropic
     anthropic_api_key: str

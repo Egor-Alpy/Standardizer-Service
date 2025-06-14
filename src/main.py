@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     
     # Подключаемся к Redis если нужен для API
     try:
-        redis_client = await Redis.from_url(settings.redis_url)
+        redis_client = await Redis.from_url(settings.redis_connection_string)
         await redis_client.ping()
         logger.info("Connected to Redis")
     except Exception as e:
